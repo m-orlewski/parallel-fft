@@ -4,6 +4,8 @@
 #include <math.h>
 #include <complex.h>
 
+// TODO: gui, padding data with zero, loading from/writing to file
+
 void print(const double complex* data, int size) {
     for (int i = 0; i < size; i++) {
         printf("(%g, %g) ", creal(data[i]), cimag(data[i]));
