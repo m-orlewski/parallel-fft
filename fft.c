@@ -17,6 +17,9 @@ void print(const double complex* data, int size) {
 int parse_file(const char* fileName, double complex** data) {
     FILE* file = fopen(fileName, "r");
 
+    if (file == NULL)
+        return -1;
+
     // read file size
     int N;
     if (fscanf(file, "%d", &N) != 1)
@@ -35,6 +38,21 @@ int parse_file(const char* fileName, double complex** data) {
 
     fclose(file);
     return N;
+}
+
+void write_to_file(const char* fileName, double complex* data, int N) {
+    FILE* file = fopen(fileName, "w");
+
+    if (file == NULL)
+        exit(EXIT_FAILURE);
+
+    fprintf(file, "%d\n", N);
+
+    for (int i=0; i < N; i++) {
+        fprintf(file, "%lf %lf\n", creal(data[i]), cimag(data[i]));
+    }
+
+    fclose(file);
 }
 
 int main() {
@@ -87,6 +105,7 @@ int main() {
     }
     
     print(kSum, N);
+    write_to_file("output/output.txt", kSum, N);
 
     free(data);
     return 0;
