@@ -3,23 +3,51 @@
 #include <stdio.h>
 #include <math.h>
 #include <complex.h>
+#include <stdlib.h>
 
 // TODO: gui, padding data with zero, loading from/writing to file
 
 void print(const double complex* data, int size) {
     for (int i = 0; i < size; i++) {
-        printf("(%g, %g) ", creal(data[i]), cimag(data[i]));
+        printf("(%lf, %lf) ", creal(data[i]), cimag(data[i]));
     }
     printf("\n");
 }
 
-#define N 8
+int parse_file(const char* fileName, double complex** data) {
+    FILE* file = fopen(fileName, "r");
 
-int main(int argc, char* argv[]) {
-    double complex data[N] = {1+I,2,3+2*I,4,5,6+I,7,8};
+    // read file size
+    int N;
+    if (fscanf(file, "%d", &N) != 1)
+        return -1;
+
+    *data = malloc(N * sizeof(double complex));
+    if (data == NULL)
+        return -1;
+
+    int i = 0;
+    double real, imag;
+    while (i < N && fscanf(file, "%lf %lf", &real, &imag) == 2) {
+        (*data)[i] = real + imag*I;
+        i++;
+    }
+
+    fclose(file);
+    return N;
+}
+
+int main() {
+
+    double complex* data = NULL;
+    int N = parse_file("data/data.txt", &data);
+    if (N == -1) {
+        printf("parse_file: something went wrong\n");
+        exit(EXIT_FAILURE);
+    }
 
     print(data, N);
-
+    
     double complex even[N/2];
     double complex odd[N/2];
 
@@ -28,14 +56,12 @@ int main(int argc, char* argv[]) {
     double sumRealEven, sumImagEven, sumRealOdd, sumImagOdd; // temporary sums
 
     for (int k=0; k < N/2; k++) {
-        printf("In loop k=%d\n", k);
         sumRealEven = 0.0;
         sumImagEven = 0.0;
         sumRealOdd = 0.0;
         sumImagOdd = 0.0;
 
         for (int i=0; i <= (N/2 - 1); i++) {
-            printf("\tIn loop i1=%d\n", i);
             // even
             double complex c1Even = data[2*i];
             double factorEven = ((2*M_PI) * ((2*i)*k)) / N;
@@ -50,7 +76,6 @@ int main(int argc, char* argv[]) {
         }
 
         for (int i=0; i < N/2; i++) {
-            printf("\tIn loop i2=%d\n", i);
             sumRealEven += creal(even[i]);
             sumImagEven += cimag(even[i]);
             sumRealOdd += creal(odd[i]);
@@ -63,5 +88,6 @@ int main(int argc, char* argv[]) {
     
     print(kSum, N);
 
+    free(data);
     return 0;
 }
