@@ -5,7 +5,7 @@
 #include <complex.h>
 #include <stdlib.h>
 
-// TODO: gui, padding data with zero, loading from/writing to file
+// TODO: gui
 
 void print(const double complex* data, int size) {
     for (int i = 0; i < size; i++) {
@@ -25,6 +25,13 @@ int parse_file(const char* fileName, double complex** data) {
     if (fscanf(file, "%d", &N) != 1)
         return -1;
 
+    // increase size to power of 2
+    int k=2;
+    while (k < N) {
+        k *= 2;
+    }
+    N = k;
+
     *data = malloc(N * sizeof(double complex));
     if (data == NULL)
         return -1;
@@ -33,6 +40,12 @@ int parse_file(const char* fileName, double complex** data) {
     double real, imag;
     while (i < N && fscanf(file, "%lf %lf", &real, &imag) == 2) {
         (*data)[i] = real + imag*I;
+        i++;
+    }
+
+    // pad with zeros
+    while (i < N) {
+        (*data)[i] = 0;
         i++;
     }
 
@@ -64,6 +77,7 @@ int main() {
         exit(EXIT_FAILURE);
     }
 
+    printf("%d\n", N);
     print(data, N);
     
     double complex even[N/2];
