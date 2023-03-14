@@ -4,6 +4,7 @@
 #include <math.h>
 #include <complex.h>
 #include <stdlib.h>
+#include <time.h>
 
 // TODO: gui
 
@@ -78,7 +79,7 @@ int main() {
     }
 
     printf("%d\n", N);
-    print(data, N);
+    //print(data, N);
     
     double complex even[N/2];
     double complex odd[N/2];
@@ -86,6 +87,11 @@ int main() {
     double complex kSum[N];
 
     double sumRealEven, sumImagEven, sumRealOdd, sumImagOdd; // temporary sums
+
+    clock_t start, end;
+    double cpu_time_used;
+
+    start = clock();
 
     for (int k=0; k < N/2; k++) {
         sumRealEven = 0.0;
@@ -117,8 +123,13 @@ int main() {
         kSum[k] = (sumRealEven + sumRealOdd) + (sumImagEven + sumImagOdd)*I;
         kSum[k+N/2] = (sumRealEven - sumRealOdd) + (sumImagEven - sumImagOdd)*I;
     }
+
+    end = clock();
+    cpu_time_used = ((double)(end - start)) / CLOCKS_PER_SEC;
+
+    printf("Time taken: %lf\n", cpu_time_used);
     
-    print(kSum, N);
+    //print(kSum, N);
     write_to_file("output/output.txt", kSum, N);
 
     free(data);
