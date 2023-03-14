@@ -9,7 +9,7 @@ $(EXEC):
 	$(CC) $(SRC) -o $@ -lm
 
 clean:
-	rm fft output/*
+	rm fft output/output.txt
 
 run:
 	./$(EXEC)
