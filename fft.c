@@ -6,6 +6,8 @@
 #include <stdlib.h>
 #include <time.h>
 
+#include "mpi.h"
+
 // TODO: gui
 
 void print(const double complex* data, int size) {
@@ -69,18 +71,7 @@ void write_to_file(const char* fileName, double complex* data, int N) {
     fclose(file);
 }
 
-int main() {
-
-    double complex* data = NULL;
-    int N = parse_file("data/data.txt", &data);
-    if (N == -1) {
-        printf("parse_file: something went wrong\n");
-        exit(EXIT_FAILURE);
-    }
-
-    printf("%d\n", N);
-    //print(data, N);
-    
+double serial_fft(const double complex* data, int N) {
     double complex even[N/2];
     double complex odd[N/2];
 
@@ -127,10 +118,35 @@ int main() {
     end = clock();
     cpu_time_used = ((double)(end - start)) / CLOCKS_PER_SEC;
 
-    printf("Time taken: %lf\n", cpu_time_used);
+    printf("serial_fft() time taken: %lf\n", cpu_time_used);
     
     //print(kSum, N);
     write_to_file("output/output.txt", kSum, N);
+    return cpu_time_used;
+}
+
+/*
+void parallel_fft(double complex* data, int N) {
+    Mpi_Init();
+
+    Mpi_Finalize();
+}
+*/
+
+int main() {
+
+    double complex* data = NULL;
+    int N = parse_file("data/data.txt", &data);
+    if (N == -1) {
+        printf("parse_file: something went wrong\n");
+        exit(EXIT_FAILURE);
+    }
+
+    printf("%d\n", N);
+    //print(data, N);
+    
+    double serial_time = serial_fft(data, N);
+    //double parallel_time = parallel_fft(data, N);
 
     free(data);
     return 0;
