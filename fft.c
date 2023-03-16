@@ -6,9 +6,7 @@
 #include <stdlib.h>
 #include <time.h>
 
-#include "mpi.h"
-
-// TODO: gui
+//#include "mpi.h"
 
 void print(const double complex* data, int size) {
     for (int i = 0; i < size; i++) {
