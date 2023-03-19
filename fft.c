@@ -15,6 +15,33 @@ void print(const double complex* data, int size) {
     printf("\n");
 }
 
+int showInterface(const char* filename) {
+    int choice = 0;
+    while(!choice) {
+        printf("###   SRiR - FFT   ###\n\n");
+        printf("Select option:\n");
+
+        printf("1. Read from file\n");
+        printf("9. Exit\n\n");
+
+        printf("Choice: \n");
+        scanf("%d", &choice);
+        // clrscr();
+    }
+
+    switch(choice) {
+        case 1:
+            printf("Input file path:\n");
+            scanf("%s", filename);
+            return 1;
+        case 9:
+            return 0;
+        default:
+            printf("No such option!\n");
+            return -1;
+    }
+}
+
 int parse_file(const char* fileName, double complex** data) {
     FILE* file = fopen(fileName, "r");
 
@@ -132,13 +159,18 @@ void parallel_fft(double complex* data, int N) {
 */
 
 int main() {
+    char* filename = malloc(sizeof(char)*200);
+    int code = showInterface(filename);
+    if(code != 1) return 0;
 
     double complex* data = NULL;
-    int N = parse_file("data/data.txt", &data);
+    int N = parse_file(filename, &data);
     if (N == -1) {
         printf("parse_file: something went wrong\n");
         exit(EXIT_FAILURE);
     }
+
+    free(filename);
 
     printf("%d\n", N);
     //print(data, N);
