@@ -166,17 +166,18 @@ double serialFFT(double complex* data, int N) {
         }
     }
 
-    for (int j = 1; j <= log_n; j++) {
-        int d = 1 << j;
-        double complex w_d = cexp(-2.0 * M_PI * I / d);
-        for (int k = 0; k < N; k += d) {
+    // Iterative-FFT (Cormen)
+    for (int s = 1; s <= log_n; s++) {
+        int m = 1 << s;
+        double complex w_m = cexp(2.0 * M_PI * I / m);
+        for (int k = 0; k <= N-1; k += m) {
             double complex w = 1.0;
-            for (int m = 0; m < d/2; m++) {
-                double complex t = w *data[k + m + d/2];
-                double complex x = data[k + m];
-                data[k + m] = x + t;
-                data[k + m + d/2] = x - t;
-                w *= w_d;
+            for (int j = 0; j <= m/2 - 1; j++) {
+                double complex t = w * data[k + j + m/2];
+                double complex u = data[k + j];
+                data[k + j] = u + t;
+                data[k + j + m/2] = u - t;
+                w *= w_m;
             }
         }
     }
