@@ -98,39 +98,21 @@ void write_to_file(const char* fileName, double complex* data, int N) {
     fclose(file);
 }
 
-int logBase2(int N)    /*function to calculate the log2(.) of int numbers*/
-{
-    int k = N, i = 0;
-    while(k) {
-        k >>= 1;
-        i++;
-    }
-    return i - 1;
-}
-
-int reverse_bits(int N, int n)    //calculating revers number
-{
-  int j, p = 0;
-  for(j = 1; j <= logBase2(N); j++) {
-    if(n & (1 << (logBase2(N) - j)))
-      p |= 1 << (j - 1);
-  }
-  return p;
-}
-
-//using the reverse order in the array
-void reorder(complex double* f1, int N)
-{
-  complex double f2[200];
-  for(int i = 0; i < N; i++)
-    f2[i] = f1[reverse_bits(N, i)];
-  for(int j = 0; j < N; j++)
-    f1[j] = f2[j];
-}
-
+/*
 void parallelFFT(complex double* data, int N, int rank, int numProcs)
 {
-    reorder(data, N); //first: reverse order
+    if (rank == 0) {
+        for (int i = 0, int j = 0; i < N; i++){
+            if (i < j) {
+                complex double temp = data[i];
+                data[i] = data[j];
+                data[j] = temp;
+            }
+            for (k = n >> 1; (j ^= k) < k; k >>= 1);
+        }
+    }
+    MPI_Bcast(data, N, MPI_C_DOUBLE_COMPLEX, 0, MPI_COMM_WORLD);
+
     complex double *W;
     W = (complex double *)malloc(N / 2 * sizeof(complex double));
     W[1] = 1.0 * (cos(-2.0*M_PI/N) + sin(-2.0*M_PI/N)*I);
@@ -140,9 +122,13 @@ void parallelFFT(complex double* data, int N, int rank, int numProcs)
     }
     int n = 1;
     int a = N / 2;
+    MPI_Barrier(MPI_COMM_WORLD);
     for(int j = 0; j < logBase2(N); j++) {
-        for(int i = 0; i < N; i++) {
+        //printf("Outer loop for j = %d and node = %d\n", j, rank);
+        for(int i = rank; i < N; i += numProcs) {
+            //printf("\tInner loop for i = %d and node = %d\n", i, rank);
             if(!(i & n)) {
+                //printf("\t\tNode: %d modifies elements: %d and %d\n", rank, i, i+n);
                 complex double temp = data[i];
                 complex double Temp = W[(i * a) % (n * a)] * data[i + n];
                 data[i] = temp + Temp;
@@ -151,17 +137,49 @@ void parallelFFT(complex double* data, int N, int rank, int numProcs)
         }
         n *= 2;
         a = a / 2;
+        MPI_Barrier(MPI_COMM_WORLD);
     }
+    //MPI_Gather(data, )
     free(W);
 }
+*/
 
-/*
 double serialFFT(double complex* data, int N) {
     clock_t start, end;
     double cpu_time_used;
     start = clock();
 
-    transform(data, N);
+    int log_n = log2(N);
+
+    // Odwraca bity w indexach 
+    // np. element o indeksie 3 - 011b znajdzie się pod indeksem 110b czyli 6
+    for (int i = 0; i < N; i++) { // i - obecny indeks
+        int bit_reverse_i = 0; // obecny indeks po odwróceniu kolejności bitów
+        for (int j = 0; j < log_n; j++) {
+            bit_reverse_i <<= 1;
+            bit_reverse_i |= (i >> j) & 1; 
+        }
+        if (bit_reverse_i < i) { // zamieniamy elementy zgodnie z nowymi indeksami
+            double complex tmp = data[i];
+            data[i] = data[bit_reverse_i];
+            data[bit_reverse_i] = tmp;
+        }
+    }
+
+    for (int j = 1; j <= log_n; j++) {
+        int d = 1 << j;
+        double complex w_d = cexp(-2.0 * M_PI * I / d);
+        for (int k = 0; k < N; k += d) {
+            double complex w = 1.0;
+            for (int m = 0; m < d/2; m++) {
+                double complex t = w *data[k + m + d/2];
+                double complex x = data[k + m];
+                data[k + m] = x + t;
+                data[k + m + d/2] = x - t;
+                w *= w_d;
+            }
+        }
+    }
 
     end = clock();
     cpu_time_used = ((double)(end - start)) / CLOCKS_PER_SEC;
@@ -171,7 +189,7 @@ double serialFFT(double complex* data, int N) {
     write_to_file("output/output.txt", data, N);
     return cpu_time_used;
 }
-*/
+
 
 int main(int argc, char* argv[]) {
     //char filename[200];
@@ -196,12 +214,16 @@ int main(int argc, char* argv[]) {
             exit(EXIT_FAILURE);
         }
     }
-    
+
+    if (rank == 0) {
+        serialFFT(data, N);
+    }
+
+ /*   
     MPI_Bcast(&N, 1, MPI_INT, 0, MPI_COMM_WORLD);
     if (rank != 0) {
         data = malloc(N * sizeof(double complex));
     }
-    MPI_Bcast(data, N, MPI_C_DOUBLE_COMPLEX, 0, MPI_COMM_WORLD);
 
     parallelFFT(data, N, rank, numProcs);
 
@@ -211,7 +233,7 @@ int main(int argc, char* argv[]) {
 
     free(data);
     MPI_Barrier(MPI_COMM_WORLD);
-
+*/
     if (rank == 0)
         printf("BEFORE FINALIZE(FINALIZE DOESN'T WORK - USE CTRL+C)\n");
     MPI_Finalize();
