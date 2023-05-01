@@ -5,6 +5,7 @@
 #include <complex.h>
 #include <stdlib.h>
 #include <time.h>
+#include <stdbool.h>
 
 #include "mpi.h"
 
@@ -98,17 +99,10 @@ void write_to_file(const char* fileName, double complex* data, int N) {
     fclose(file);
 }
 
-
-void parallelFFT(complex double* data, int N, int rank, int numProcs)
-{
-    int log_n = log2(N);
-    int log_p = log2(numProcs);
-
-    // Odwraca bity w indexach 
-    // np. element o indeksie 3 - 011b znajdzie się pod indeksem 110b czyli 6
-    for (int i = 0; i < N; i++) { // i - obecny indeks
+void bitReversePermutation(double complex* data, int N) {
+        for (int i = 0; i < N; i++) { // i - obecny indeks
         int bit_reverse_i = 0; // obecny indeks po odwróceniu kolejności bitów
-        for (int j = 0; j < log_n; j++) {
+        for (int j = 0; j < log2(N); j++) {
             bit_reverse_i <<= 1;
             bit_reverse_i |= (i >> j) & 1; 
         }
@@ -118,6 +112,37 @@ void parallelFFT(complex double* data, int N, int rank, int numProcs)
             data[bit_reverse_i] = tmp;
         }
     }
+}
+
+void serialFFT(double complex* data, int N, bool skipPermutation, int rank) {
+    if (!skipPermutation)
+        bitReversePermutation(data, N);
+
+    // Iterative-FFT (Cormen)
+    for (int s = 1; s <= log2(N); s++) {
+        //printf("For s = %d (rank = %d)\n", s, rank);
+        int m = 1 << s;
+        double complex w_m = cexp(2.0 * M_PI * I / m);
+        for (int k = 0; k <= N-1; k += m) {
+            double complex w = 1.0;
+            for (int j = 0; j <= m/2 - 1; j++) {
+                //printf("\t calculating indexes: %d and %d\n", k+j, k+j+m/2);
+                //printf("\t data[k+j+m/2] = (%lf, %lf)\n", creal(data[k+j+m/2]), cimag(data[k+j+m/2]));
+                double complex t = w * data[k + j + m/2];
+                double complex u = data[k + j];
+                data[k + j] = u + t;
+                data[k + j + m/2] = u - t;
+                //printf("\tw_m = (%lf, %lf), w = (%lf, %lf), t = (%lf, %lf), u = (%lf, %lf)\n\n", creal(w_m), cimag(w_m), creal(w), cimag(w), creal(t), cimag(t), creal(u), cimag(u));
+                w *= w_m;
+            }
+        }
+    }
+}
+
+void parallelFFT(complex double* data, int N, int rank, int numProcs)
+{
+    if (rank == 0) // root dokonuje permutacji
+        bitReversePermutation(data, N);
 
     int n_local = N / numProcs;
     complex double* local_data = malloc(n_local * sizeof(double complex));
@@ -126,97 +151,36 @@ void parallelFFT(complex double* data, int N, int rank, int numProcs)
     // Rozdziela dane pomiędzy procesy, ex. P1 dostanie indeksy 0-3, P2 dostanie indeksy 4-7
     MPI_Scatter(data, n_local, MPI_C_DOUBLE_COMPLEX, local_data, n_local, MPI_C_DOUBLE_COMPLEX, 0, MPI_COMM_WORLD);
 
-    // Iterative-FFT (Cormen) for log_n - log_p iteracji (które nie wymagają zbierania danych z pozostałych procesów)
-    for (int s = 1; s <= log_n - log_p; s++) {
-        printf("For s = %d, rank = %d\n", s, rank);
-        int m = 1 << s;
-        double complex w_m = cexp(2.0 * M_PI * I / m);
-        for (int k = 0; k <= n_local-1; k += m) {
-            double complex w = 1.0;
-            for (int j = 0; j <= m/2 - 1; j++) {
-                printf("\t\tcalculating indexes: %d and %d rank = %d\n", k+j, k+j+m/2, rank);
-                double complex t = w * local_data[k + j + m/2];
-                double complex u = local_data[k + j];
-                local_data[k + j] = u + t;
-                local_data[k + j + m/2] = u - t;
-                w *= w_m;
-            }
-        }
-    }
+    // Każdy proces dokonuje permutacji i liczy FFT na lokalnych danych (faza 1 i 2)
+    serialFFT(local_data, n_local, true, rank);
 
+    // Przekazujemy wyniki do root-a TO BE CHANGED
+    MPI_Gather(local_data, n_local, MPI_C_DOUBLE_COMPLEX, data, n_local, MPI_C_DOUBLE_COMPLEX, 0, MPI_COMM_WORLD);
     free(local_data);
-}
 
-void bitReversePermutation(double complex* data, int N) {
-    int log_n = log2(N);
-        for (int i = 0; i < N; i++) { // i - obecny indeks
-        int bit_reverse_i = 0; // obecny indeks po odwróceniu kolejności bitów
-        for (int j = 0; j < log_n; j++) {
-            bit_reverse_i <<= 1;
-            bit_reverse_i |= (i >> j) & 1; 
-        }
-        if (bit_reverse_i < i) { // zamieniamy elementy zgodnie z nowymi indeksami
-            double complex tmp = data[i];
-            data[i] = data[bit_reverse_i];
-            data[bit_reverse_i] = tmp;
-        }
-    }
-}
-
-
-double serialFFT(double complex* data, int N, int rank) {
-    clock_t start, end;
-    double cpu_time_used;
-    start = clock();
-
-    int log_n = log2(N);
-    /*
-    // Odwraca bity w indexach 
-    // np. element o indeksie 3 - 011b znajdzie się pod indeksem 110b czyli 6
-    for (int i = 0; i < N; i++) { // i - obecny indeks
-        int bit_reverse_i = 0; // obecny indeks po odwróceniu kolejności bitów
-        for (int j = 0; j < log_n; j++) {
-            bit_reverse_i <<= 1;
-            bit_reverse_i |= (i >> j) & 1; 
-        }
-        if (bit_reverse_i < i) { // zamieniamy elementy zgodnie z nowymi indeksami
-            double complex tmp = data[i];
-            data[i] = data[bit_reverse_i];
-            data[bit_reverse_i] = tmp;
-        }
-    }
-    */
-
-    // Iterative-FFT (Cormen)
-    for (int s = 1; s <= log_n; s++) {
-        printf("For s = %d (rank = %d)\n", s, rank);
-        int m = 1 << s;
-        double complex w_m = cexp(2.0 * M_PI * I / m);
-        for (int k = 0; k <= N-1; k += m) {
-            double complex w = 1.0;
-            for (int j = 0; j <= m/2 - 1; j++) {
-                printf("\t calculating indexes: %d and %d\n", k+j, k+j+m/2);
-                printf("\t data[k+j+m/2] = (%lf, %lf)\n", creal(data[k+j+m/2]), cimag(data[k+j+m/2]));
-                double complex t = w * data[k + j + m/2];
-                double complex u = data[k + j];
-                data[k + j] = u + t;
-                data[k + j + m/2] = u - t;
-                printf("\tw_m = (%lf, %lf), w = (%lf, %lf), t = (%lf, %lf), u = (%lf, %lf)\n\n", creal(w_m), cimag(w_m), creal(w), cimag(w), creal(t), cimag(t), creal(u), cimag(u));
-                w *= w_m;
+    if (rank == 0) { // root dokańcza obliczenia TO BE CHANGED
+        int log_n = log2(N);
+        int log_p = log2(numProcs);
+        for (int s = log_n - log_p + 1; s <= log_n; s++) {
+            //printf("For s = %d, rank = %d\n", s, rank);
+            int m = 1 << s;
+            double complex w_m = cexp(2.0 * M_PI * I / m);
+            for (int k = 0; k <= N-1; k += m) {
+                double complex w = 1.0;
+                for (int j = 0; j <= m/2 - 1; j++) {
+                    //printf("\t calculating indexes: %d and %d\n", k+j, k+j+m/2);
+                    //printf("\t data[k+j+m/2] = (%lf, %lf)\n", creal(data[k+j+m/2]), cimag(data[k+j+m/2]));
+                    double complex t = w * data[k + j + m/2];
+                    double complex u = data[k + j];
+                    data[k + j] = u + t;
+                    data[k + j + m/2] = u - t;
+                    //printf("\tw_m = (%lf, %lf), w = (%lf, %lf), t = (%lf, %lf), u = (%lf, %lf)\n\n", creal(w_m), cimag(w_m), creal(w), cimag(w), creal(t), cimag(t), creal(u), cimag(u));
+                    w *= w_m;
+                }
             }
         }
-        print(data, N);
     }
-
-    end = clock();
-    cpu_time_used = ((double)(end - start)) / CLOCKS_PER_SEC;
-
-    printf("serialFFT() time taken: %lf\n", cpu_time_used);
-    
-    write_to_file("output/output.txt", data, N);
-    return cpu_time_used;
 }
-
 
 int main(int argc, char* argv[]) {
     //char filename[200];
@@ -232,10 +196,14 @@ int main(int argc, char* argv[]) {
     MPI_Comm_size(MPI_COMM_WORLD, &numProcs);
     MPI_Get_processor_name(processorName, &nameLen);
 
+    clock_t start, end;
+    double t1, t2;
+    double cpu_time_used;
     
     // root process reads data from file and broadcasts
     if (rank == 0) {
         N = parse_file("data/data.txt", &data);
+        printf("N = %d\n", N);
         if (N == -1) {
             printf("parse_file: something went wrong\n");
             exit(EXIT_FAILURE);
@@ -243,67 +211,25 @@ int main(int argc, char* argv[]) {
     }
 
     MPI_Bcast(&N, 1, MPI_INT, 0, MPI_COMM_WORLD);
-    if (rank == 0)
-        bitReversePermutation(data, N);
     
+    // if (rank == 0) {
+    //     start = clock();
+    //     serialFFT(data, N, false, -1);
+    //     end = clock();
+    //     cpu_time_used = ((double)(end - start)) / CLOCKS_PER_SEC;
+    //     printf("serialFFT() time taken: %lf\n", cpu_time_used);
+    //     write_to_file("output/outputSerial.txt", data, N);
+    // }
+
+    t1 = MPI_Wtime();
+    parallelFFT(data, N, rank, numProcs);
+    t2 = MPI_Wtime();
     if (rank == 0) {
-        serialFFT(data, N, -1);
-        print(data, N);
+        printf("parallelFFT() time taken: %f\n", t2-t1);
+        write_to_file("output/outputParallel.txt", data, N);
     }
-    /*
-    int n_local = N / numProcs;
-    complex double* local_data = malloc(n_local * sizeof(double complex));
-    MPI_Barrier(MPI_COMM_WORLD);
 
-    // Rozdziela dane pomiędzy procesy, ex. P1 dostanie indeksy 0-3, P2 dostanie indeksy 4-7
-    MPI_Scatter(data, n_local, MPI_C_DOUBLE_COMPLEX, local_data, n_local, MPI_C_DOUBLE_COMPLEX, 0, MPI_COMM_WORLD);
-
-    // Każdy proces dokonuje permutacji i liczy FFT na lokalnych danych (faza 1 i 2)
-    serialFFT(local_data, n_local, rank);
-    //print(local_data, n_local);
-    if (rank != 0) {
-        data = malloc(N * sizeof(complex double));
-    }
-    MPI_Barrier(MPI_COMM_WORLD);
-    MPI_Allgather(local_data, n_local, MPI_C_DOUBLE_COMPLEX, data, n_local, MPI_C_DOUBLE_COMPLEX, MPI_COMM_WORLD);
-    free(local_data);
-    //print(data, N);
-
-    // Faza 3, kolejne obliczenia z komunikacją między procesami
-    //double complex* recv_buffer = malloc(N * sizeof(double complex));
-    //MPI_Barrier(MPI_COMM_WORLD);
-    //MPI_Allgather(local_data, n_local, MPI_C_DOUBLE_COMPLEX, recv_buffer, n_local, MPI_C_DOUBLE_COMPLEX, MPI_COMM_WORLD);
-
-    //for (int i = 0; i < N; i++) {
-    //    data[i] = recv_buffer[i];
-    //}
-    //free(recv_buffer);
-    MPI_Barrier(MPI_COMM_WORLD);
-
-    if (rank == 0) { // root dokańcza obliczenia - do poprawy
-        int log_n = log2(N);
-        int log_p = log2(numProcs);
-        for (int s = log_n - log_p + 1; s <= log_n; s++) {
-            printf("2 For s = %d, rank = %d\n", s, rank);
-            int m = 1 << s;
-            double complex w_m = cexp(2.0 * M_PI * I / m);
-            for (int k = 0; k <= n_local-1; k += m) {
-                double complex w = 1.0;
-                for (int j = 0; j <= m/2 - 1; j++) {
-                    printf("\t\tcalculating indexes: %d and %d rank = %d\n", k+j, k+j+m/2, rank);
-                    double complex t = w * data[k + j + m/2];
-                    double complex u = data[k + j];
-                    data[k + j] = u + t;
-                    data[k + j + m/2] = u - t;
-                    w *= w_m;
-                }
-            }
-        }
-    }
-    */
-    MPI_Barrier(MPI_COMM_WORLD);
     if (rank == 0) {
-        write_to_file("output/output.txt", data, N);
         free(data);
         printf("BEFORE FINALIZE(FINALIZE DOESN'T WORK - USE CTRL+C)\n");
     }
