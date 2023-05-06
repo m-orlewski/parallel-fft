@@ -122,7 +122,7 @@ void bitReversePermutation(double complex* data, int N) {
 
 void serialFFT(double complex* data, int N, bool skipPermutation, int rank) {
     if (!skipPermutation)
-        bitReversePermutation(data, N);
+       bitReversePermutation(data, N);
 
     for (int s = 1; s <= log2(N); s++) {
         //printf("For s = %d (rank = %d)\n", s, rank);
@@ -139,14 +139,10 @@ void serialFFT(double complex* data, int N, bool skipPermutation, int rank) {
     }
 }
 
-void parallelFFT(complex double* data, int N, int rank, int numProcs)
+void parallelFFT(double complex* data, int N, double complex* local_data, int n_local, int rank, int numProcs)
 {
     if (rank == 0) // root dokonuje permutacji
-        bitReversePermutation(data, N);
-
-    int n_local = N / numProcs;
-    complex double* local_data = malloc(n_local * sizeof(double complex));
-    MPI_Barrier(MPI_COMM_WORLD);
+       bitReversePermutation(data, N);
 
     // Rozdziela dane pomiędzy procesy, ex. P1 dostanie indeksy 0-3, P2 dostanie indeksy 4-7
     MPI_Scatter(data, n_local, MPI_C_DOUBLE_COMPLEX, local_data, n_local, MPI_C_DOUBLE_COMPLEX, 0, MPI_COMM_WORLD);
@@ -154,44 +150,79 @@ void parallelFFT(complex double* data, int N, int rank, int numProcs)
     // Każdy proces dokonuje permutacji i liczy FFT na lokalnych danych (faza 1 i 2)
     serialFFT(local_data, n_local, true, rank);
 
-    MPI_Barrier(MPI_COMM_WORLD);
     MPI_Allgather(local_data, n_local, MPI_C_DOUBLE_COMPLEX, data, n_local, MPI_C_DOUBLE_COMPLEX, MPI_COMM_WORLD);
-    free(local_data);
 
-    int Isend=0, Irecv=0;
-    int c, recv_count;
-    int log_n = log2(N);
-    int log_p = log2(numProcs);
-    for (int s = log_n - log_p + 1; s <= log_n; s++) {
-        MPI_Request reqs[1000000];
-        //int reqs = 0;
-        int m = pow(2, s);
-        c = 0;
-        for (int i = 0; i < N; i += m) {
-            recv_count = 0;
-            for (int j = i+rank; j < i + m/2; j+=numProcs) {
-                //printf("For s = %d (rank = %d) calculating indexes: %d and %d\n", s, rank, j, j+m/2);
-                double complex temp = data[j];
-                double complex twiddle= cexp(-2 * M_PI * (j - i) / m * I) * data[j + m/2];
-                data[j] = temp + twiddle;
-                data[j + m/2] = temp - twiddle;
-                for (int proc=0; proc < numProcs; proc++) {
-                    if (proc != rank) {
-                        //printf("Sending data[%d] to proc=%d with tag=%d (from rank=%d)\n", j, proc, j, rank);
-                        MPI_Isend(&data[j], 1, MPI_C_DOUBLE_COMPLEX, proc, j, MPI_COMM_WORLD, &reqs[c++]);
-                        //printf("Sending data[%d] to proc=%d with tag=%d (from rank=%d)\n", j+m/2, proc, j+m/2, rank);
-                        MPI_Isend(&data[j + m/2], 1, MPI_C_DOUBLE_COMPLEX, proc, j + m/2, MPI_COMM_WORLD, &reqs[c++]);
-                        //printf("Receiving data[%d] from proc=%d with tag=%d (from rank=%d)\n", i+proc + recv_count*numProcs, proc, i+proc + recv_count*numProcs, rank);
-                        MPI_Irecv(&data[i + proc + recv_count*numProcs], 1, MPI_C_DOUBLE_COMPLEX, proc, i + proc + recv_count*numProcs, MPI_COMM_WORLD, &reqs[c++]);
-                        //printf("Receiving data[%d] from proc=%d with tag=%d (from rank=%d)\n", i+proc + recv_count*numProcs+m/2, proc, i+proc + recv_count*numProcs+m/2, rank);
-                        MPI_Irecv(&data[i + proc + recv_count*numProcs + m/2], 1, MPI_C_DOUBLE_COMPLEX, proc, i + proc + recv_count*numProcs + m/2, MPI_COMM_WORLD, &reqs[c++]);
-                    }
+    // Root dokańcza obliczenia
+    if (rank == 0) {
+        int log_n = log2(N);
+        int log_p = log2(numProcs);
+        for (int s = log_n - log_p + 1; s <= log_n; s++) {
+            int m = pow(2, s);
+            for (int i = 0; i < N; i += m) {
+                for (int j = i; j < i + m/2; j++) {
+                    double complex temp = data[j];
+                    double complex twiddle= cexp(-2 * M_PI * (j - i) / m * I) * data[j + m/2];
+                    data[j] = temp + twiddle;
+                    data[j + m/2] = temp - twiddle;
                 }
-                recv_count++;
             }
         }
-        MPI_Waitall(c, reqs, MPI_STATUSES_IGNORE);
     }
+}
+
+void runSerialFFT(double complex* data, int N, int rank) {
+    if (rank == 0) {
+        // Copy input to not overwrite input data
+        double complex* data_copy = malloc(N * sizeof(double complex));
+        memcpy(data_copy, data, N * sizeof(double complex));
+
+        clock_t start, end;
+        double cpu_time_used;
+        double total_time = 0.0;
+
+        for (int i=0; i < N_RUNS; i++) {
+            start = clock();
+            serialFFT(data_copy, N, false, -1);
+            // Only first run gives correct results, other are for average time
+            if (i == 0) write_to_file("output/outputSerial.txt", data_copy, N);
+            end = clock();
+            cpu_time_used = ((double)(end - start)) / CLOCKS_PER_SEC;
+            total_time += cpu_time_used;
+        }
+        free(data_copy);
+        printf("serialFFT() after %d runs: total_time: %lf, average time: %lf\n", N_RUNS, total_time, total_time/N_RUNS);
+    }
+}
+
+void runParallelFFT(double complex* data, int N, int rank, int numProcs) {
+    double complex* data_copy, *local_data;
+    double t1, t2;
+    double time = 0.0;
+
+    int n_local = N / numProcs;
+    local_data = malloc(n_local * sizeof(double complex));
+    MPI_Barrier(MPI_COMM_WORLD);
+
+    // Copy input to not overwrite input data
+    data_copy = malloc(N * sizeof(double complex));
+    memcpy(data_copy, data, N * sizeof(double complex));
+
+    for (int i=0; i < N_RUNS; i++) {
+        t1 = MPI_Wtime();
+        parallelFFT(data_copy, N, local_data, n_local, rank, numProcs);
+        t2 = MPI_Wtime();
+        time += (t2-t1);
+        if (i == 0 && rank == 0) write_to_file("output/outputParallel.txt", data_copy, N);
+    }
+
+    free(local_data);
+    free(data_copy);
+
+    // Average time from all processes
+    double total_time = 0.0;
+    MPI_Reduce(&time, &total_time, 1, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
+    total_time /= numProcs;
+    if (rank == 0) printf("parallelFFT() after %d runs: total_time: %lf, average time: %lf\n", N_RUNS, total_time, total_time/N_RUNS);
 }
 
 int main(int argc, char* argv[]) {
@@ -206,13 +237,9 @@ int main(int argc, char* argv[]) {
     MPI_Init(&argc, &argv);
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     MPI_Comm_size(MPI_COMM_WORLD, &numProcs);
-    MPI_Get_processor_name(processorName, &nameLen);
-
-    clock_t start, end;
-    double t1, t2;
-    double cpu_time_used;
+    MPI_Get_processor_name(processorName, &nameLen);  
     
-    // root process reads data from file and broadcasts
+    // root process reads data from file
     if (rank == 0) {
         N = parse_file("data/data.txt", &data);
         printf("N = %d\n", N);
@@ -224,46 +251,14 @@ int main(int argc, char* argv[]) {
 
     MPI_Bcast(&N, 1, MPI_INT, 0, MPI_COMM_WORLD);
     if (rank != 0) data = malloc(N * sizeof(double complex));
+    MPI_Barrier(MPI_COMM_WORLD);
 
-    // double complex* data_copy;
-    // if (rank == 0) {
-    //     data_copy = malloc(N * sizeof(double complex));
-    //     memcpy(data_copy, data, N * sizeof(double complex));
-    // }
-    
-    // if (rank == 0) {
-    //     double total_time = 0.0;
-    //     for (int i=0; i < N_RUNS; i++) {
-    //         start = clock();
-    //         serialFFT(data, N, false, -1);
-    //         write_to_file("output/outputSerial.txt", data, N);
-    //         end = clock();
-    //         cpu_time_used = ((double)(end - start)) / CLOCKS_PER_SEC;
-    //         total_time += cpu_time_used;
-    //         //memcpy(data_copy, data, N * sizeof(double complex));
-    //         //printf("serialFFT() time taken: %lf\n", cpu_time_used);
-    //     }
-    //     printf("serialFFT() after %d runs: total_time: %lf, average time: %lf\n", N_RUNS, total_time, total_time/N_RUNS);
-    // }
+    runSerialFFT(data, N, rank);
 
-    double total_time = 0.0;
-    for (int i=0; i < N_RUNS; i++) {
-        t1 = MPI_Wtime();
-        parallelFFT(data, N, rank, numProcs);
-        t2 = MPI_Wtime();
-        if (rank == 0) {
-            total_time += (t2-t1);
-            printf("parallelFFT() time taken: %f\n", t2-t1);
-            write_to_file("output/outputParallel.txt", data, N);
-        }
-    }
-    if (rank == 0)
-        printf("parallelFFT() after %d runs: total_time: %lf, average time: %lf\n", N_RUNS, total_time, total_time/N_RUNS);
-
-
-    free(data);
+    runParallelFFT(data, N, rank, numProcs);
 
     if (rank == 0) {
+        free(data);
         printf("BEFORE FINALIZE(FINALIZE DOESN'T WORK - USE CTRL+C)\n");
     }
     MPI_Finalize();
