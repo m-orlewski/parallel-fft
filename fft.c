@@ -231,34 +231,34 @@ int main(int argc, char* argv[]) {
     //     memcpy(data_copy, data, N * sizeof(double complex));
     // }
     
-    // if (rank == 0) {
-    //     double total_time = 0.0;
-    //     for (int i=0; i < N_RUNS; i++) {
-    //         start = clock();
-    //         serialFFT(data, N, false, -1);
-    //         write_to_file("output/outputSerial.txt", data, N);
-    //         end = clock();
-    //         cpu_time_used = ((double)(end - start)) / CLOCKS_PER_SEC;
-    //         total_time += cpu_time_used;
-    //         //memcpy(data_copy, data, N * sizeof(double complex));
-    //         //printf("serialFFT() time taken: %lf\n", cpu_time_used);
-    //     }
-    //     printf("serialFFT() after %d runs: total_time: %lf, average time: %lf\n", N_RUNS, total_time, total_time/N_RUNS);
-    // }
-
-    double total_time = 0.0;
-    for (int i=0; i < N_RUNS; i++) {
-        t1 = MPI_Wtime();
-        parallelFFT(data, N, rank, numProcs);
-        t2 = MPI_Wtime();
-        if (rank == 0) {
-            total_time += (t2-t1);
-            printf("parallelFFT() time taken: %f\n", t2-t1);
-            write_to_file("output/outputParallel.txt", data, N);
+    if (rank == 0) {
+        double total_time = 0.0;
+        for (int i=0; i < N_RUNS; i++) {
+            start = clock();
+            serialFFT(data, N, false, -1);
+            write_to_file("output/outputSerial.txt", data, N);
+            end = clock();
+            cpu_time_used = ((double)(end - start)) / CLOCKS_PER_SEC;
+            total_time += cpu_time_used;
+            //memcpy(data_copy, data, N * sizeof(double complex));
+            //printf("serialFFT() time taken: %lf\n", cpu_time_used);
         }
+        printf("serialFFT() after %d runs: total_time: %lf, average time: %lf\n", N_RUNS, total_time, total_time/N_RUNS);
     }
-    if (rank == 0)
-        printf("parallelFFT() after %d runs: total_time: %lf, average time: %lf\n", N_RUNS, total_time, total_time/N_RUNS);
+
+    // double total_time = 0.0;
+    // for (int i=0; i < N_RUNS; i++) {
+    //     t1 = MPI_Wtime();
+    //     parallelFFT(data, N, rank, numProcs);
+    //     t2 = MPI_Wtime();
+    //     if (rank == 0) {
+    //         total_time += (t2-t1);
+    //         printf("parallelFFT() time taken: %f\n", t2-t1);
+    //         write_to_file("output/outputParallel.txt", data, N);
+    //     }
+    // }
+    // if (rank == 0)
+    //     printf("parallelFFT() after %d runs: total_time: %lf, average time: %lf\n", N_RUNS, total_time, total_time/N_RUNS);
 
 
     free(data);
