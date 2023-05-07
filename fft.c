@@ -22,14 +22,14 @@ void print(const double complex* data, int size) {
     printf("\n");
 }
 
-/*
-int showInterface(const char* filename) {
+int showInterface(char* filename) {
     int choice = 0;
     while(!choice) {
         printf("###   SRiR - FFT   ###\n\n");
         printf("Select option:\n");
 
-        printf("1. Read from file\n");
+        printf("1. Run with default input file\n");
+        printf("2. Run with specified file\n");
         printf("9. Exit\n\n");
 
         printf("Choice: \n");
@@ -39,6 +39,9 @@ int showInterface(const char* filename) {
 
     switch(choice) {
         case 1:
+            strcpy(filename, "data/data.txt");
+            return 1;
+        case 2:
             printf("Input file path:\n");
             scanf("%s", filename);
             return 1;
@@ -49,7 +52,6 @@ int showInterface(const char* filename) {
             return -1;
     }
 }
-*/
 
 int parse_file(const char* fileName, double complex** data) {
     FILE* file = fopen(fileName, "r");
@@ -226,9 +228,7 @@ void runParallelFFT(double complex* data, int N, int rank, int numProcs) {
 }
 
 int main(int argc, char* argv[]) {
-    //char filename[200];
-    //int code = showInterface(filename);
-    //if(code != 1) return 0;
+    
 
     int N;
     double complex* data;
@@ -241,7 +241,10 @@ int main(int argc, char* argv[]) {
     
     // root process reads data from file
     if (rank == 0) {
-        N = parse_file("data/data.txt", &data);
+        char filename[200];
+        int code = showInterface(filename);
+        if(code != 1) return 0;
+        N = parse_file(filename, &data);
         printf("N = %d\n", N);
         if (N == -1) {
             printf("parse_file: something went wrong\n");
@@ -259,7 +262,7 @@ int main(int argc, char* argv[]) {
 
     if (rank == 0) {
         free(data);
-        printf("BEFORE FINALIZE(FINALIZE DOESN'T WORK - USE CTRL+C)\n");
+        printf("BEFORE FINALIZE(FINALIZE MAY NOT WORK - USE CTRL+C)\n");
     }
     MPI_Finalize();
 

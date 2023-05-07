@@ -1,6 +1,9 @@
-CC=gcc
+CC = mpicc
 EXEC = fft
-LIBS=-lm
+RUNNER = mpiexec
+NODEMAKER = /opt/nfs/config/station204_name_list.sh
+NODESFILE = nodes
+LIBS = -lm
 SRC = $(wildcard *.c)
 
 all: $(EXEC) run
@@ -9,7 +12,8 @@ $(EXEC):
 	$(CC) $(SRC) -o $@ -lm
 
 clean:
-	rm fft output/output.txt
+	rm $(EXEC) $(NODESFILE) output/*
 
 run:
-	./$(EXEC)
+	$(NODEMAKER) 1 16 > $(NODESFILE)
+	$(RUNNER) -f $(NODESFILE) -n 8 ./$(EXEC) 
