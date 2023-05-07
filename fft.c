@@ -149,7 +149,7 @@ void parallelFFT(double complex* data, int N, double complex* local_data, int n_
     // Rozdziela dane pomiędzy procesy, ex. P1 dostanie indeksy 0-3, P2 dostanie indeksy 4-7
     MPI_Scatter(data, n_local, MPI_C_DOUBLE_COMPLEX, local_data, n_local, MPI_C_DOUBLE_COMPLEX, 0, MPI_COMM_WORLD);
 
-    // Każdy proces dokonuje permutacji i liczy FFT na lokalnych danych (faza 1 i 2)
+    // Każdy proces liczy FFT na lokalnych danych (faza 1 i 2)
     serialFFT(local_data, n_local, true, rank);
 
     MPI_Allgather(local_data, n_local, MPI_C_DOUBLE_COMPLEX, data, n_local, MPI_C_DOUBLE_COMPLEX, MPI_COMM_WORLD);
