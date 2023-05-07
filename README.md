@@ -44,11 +44,11 @@ Plik wyjściowy zawiera:
 
 ## Opis działania równoległego algorytmu FFT
 
- - Węzeł 0 dokonuje permutacji
- - Węzeł 0 rozdziela dane pomiędzy procesy
- - Każdy węzeł liczy FFT na swoich danych za pomocą algorytmu szeregowego z pominięciem permutacji
+ - Węzeł 0 dokonuje permutacji elementów poprzez odwracanie bitów w indeksach tablicowych
+ - Węzeł 0 rozdziela dane pomiędzy wszystkie procesy
+ - Każdy węzeł wykonuje pierwszą część obliczeń FFT na swoich lokalnych danych za pomocą algorytmu szeregowego z pominięciem permutacji (log2(N)-log2(p) iteracji pętli)
  - Wyniki zostają zebrane do węzła 0
- - Węzeł 0 dokańcza obliczenia
+ - Węzeł 0 dokańcza obliczenia (ostatnie log2(p) iteracji)
 
 ### Schemat:
 
