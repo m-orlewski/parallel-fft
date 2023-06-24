@@ -3,7 +3,7 @@ EXEC = fft
 RUNNER = upcxx-run
 NODEMAKER = /opt/nfs/config/station204_name_list.sh
 NODESFILE = nodes
-PROCESSES = 17
+PROCESSES = 9
 LIBS = -lm
 SRC = $(wildcard *.cpp)
 

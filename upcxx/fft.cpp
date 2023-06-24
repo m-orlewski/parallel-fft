@@ -7,16 +7,6 @@
 #include <sstream>
 #include <upcxx/upcxx.hpp>
 
-namespace global
-{
-int process_count;
-int slave_count;
-int rank;
-
-std::vector<float> data;
-int data_size;
-}
-
 int reverseBits(int number, int range)
 {
     int reversed = 0;
@@ -27,12 +17,12 @@ int reverseBits(int number, int range)
     return reversed;
 }
 
-void parseFile(const char *path)
+void parseFile(const char *path, std::vector<float>& data, int rank, int& N)
 {
-    upcxx::global_ptr<float> data = nullptr;
-    upcxx::global_ptr<int> data_size = nullptr;
+    upcxx::global_ptr<float> input_data = nullptr;
+    upcxx::global_ptr<int> input_size = nullptr;
 
-    if(global::rank == 0)
+    if(rank == 0)
     {
         std::vector<float> buffer;
 
@@ -51,29 +41,29 @@ void parseFile(const char *path)
         while(file >> val)
             buffer.push_back(val);
         
-        data = upcxx::new_array<float>(buffer.size());
-        data_size = upcxx::new_<int>();
+        input_data = upcxx::new_array<float>(buffer.size());
+        input_size = upcxx::new_<int>();
 
         for(int i = 0; i < buffer.size(); i++)
-            upcxx::rput(buffer[i], data + i).wait();
+            upcxx::rput(buffer[i], input_data + i).wait();
 
-        upcxx::rput(static_cast<int>(buffer.size()), data_size).wait();
+        upcxx::rput(static_cast<int>(buffer.size()), input_size).wait();
     }
 
-    data = upcxx::broadcast(data, 0).wait();
-    data_size = upcxx::broadcast(data_size, 0).wait();
+    input_data = upcxx::broadcast(input_data, 0).wait();
+    input_size = upcxx::broadcast(input_size, 0).wait();
 
-    global::data_size = upcxx::rget(data_size).wait();
+    N = upcxx::rget(input_size).wait();
 
-    for(int i = 0; i < global::data_size; i++)
-        global::data.push_back(upcxx::rget(data + i).wait());
+    for(int i = 0; i < N; i++)
+        data.push_back(upcxx::rget(input_data + i).wait());
 }
 
-void printResults(const float *tab_re, const float *tab_im, double time)
+void printResults(const float *tab_re, const float *tab_im, double time, int rank, int N)
 {
-    if(0 == global::rank)
+    if(0 == rank)
     {
-        for(int i = 1; i < global::data_size; i++)
+        for(int i = 1; i < N; i++)
             std::cout << tab_re[i] << "\t" << tab_im[i] << " i" << std::endl;
 
         std::cout << "Run time: " << time << " ms" << std::endl;
@@ -83,25 +73,27 @@ void printResults(const float *tab_re, const float *tab_im, double time)
 int main()
 {
     upcxx::init();
-    
-    global::process_count = upcxx::rank_n();
-    global::slave_count = global::process_count - 1;
-    global::rank = upcxx::rank_me();
 
-    parseFile("data/data.txt");
+    int process_count = upcxx::rank_n();
+    int slave_count = process_count - 1;
+    int rank = upcxx::rank_me();
+    std::vector<float> data;
+    int N;
+
+    parseFile("data/data.txt", data, rank, N);
 
     upcxx::global_ptr<float> tab_re = nullptr;
     upcxx::global_ptr<float> tab_im = nullptr;
 
-    if(global::rank == 0)
+    if(rank == 0)
     {
-        tab_re = upcxx::new_array<float>(global::data_size);
-        tab_im = upcxx::new_array<float>(global::data_size);
+        tab_re = upcxx::new_array<float>(N);
+        tab_im = upcxx::new_array<float>(N);
 
-        const int max_bit_width = std::log2f(global::data_size);
-        for(int i = 0; i < global::data_size; i++)
+        const int max_bit_width = std::log2f(N);
+        for(int i = 0; i < N; i++)
         {
-            upcxx::rput(global::data[reverseBits(i - 1, max_bit_width) + 1], tab_re + i).wait();
+            upcxx::rput(data[reverseBits(i - 1, max_bit_width) + 1], tab_re + i).wait();
             upcxx::rput(0.0f, tab_im + i).wait();
         }
     }
@@ -109,18 +101,18 @@ int main()
     tab_re = upcxx::broadcast(tab_re, 0).wait();
     tab_im = upcxx::broadcast(tab_im, 0).wait();
 
-    const int size_local = global::data_size / global::slave_count;
+    const int size_local = N / slave_count;
 
     auto start_time = std::chrono::high_resolution_clock::now();
-    for(int div = 1, key = std::log2f(global::data_size - 1); key > 0; key--, div *= 2)
+    for(int div = 1, key = std::log2f(N - 1); key > 0; key--, div *= 2)
     {
         float buffer_re[size_local]{};
         float buffer_im[size_local]{};
-        if(global::rank != 0)
+        if(rank != 0)
         {
             for(int i = 0; i < size_local; i++)
             {
-                const auto offset = (global::rank - 1) * size_local + i + 1;
+                const auto offset = (rank - 1) * size_local + i + 1;
                 const auto is_even = ((offset + div - 1) / div) % 2;
                 const auto is_odd = 1 - is_even;
                 const auto butterfly_index = M_PI * ((offset - 1) % (div * 2)) / div;
@@ -140,11 +132,11 @@ int main()
 
         upcxx::barrier();
 
-        if(global::rank != 0)
+        if(rank != 0)
         {
             for(int i = 0; i < size_local; i++)
             {
-                const auto offset = (global::rank - 1) * size_local + i + 1;
+                const auto offset = (rank - 1) * size_local + i + 1;
                 upcxx::rput(buffer_re[i], tab_re + offset).wait();
                 upcxx::rput(buffer_im[i], tab_im + offset).wait();
             }
@@ -154,12 +146,12 @@ int main()
     }
     auto end_time = std::chrono::high_resolution_clock::now();
 
-    if(global::rank == 0)
+    if(rank == 0)
     {
         double time = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time).count();
         float *tab_re_arr = tab_re.local();
         float *tab_im_arr = tab_im.local();
-        printResults(tab_re_arr, tab_im_arr, time);
+        printResults(tab_re_arr, tab_im_arr, time, rank, N);
     }
 
     upcxx::finalize();
